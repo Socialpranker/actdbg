@@ -14,18 +14,20 @@ import (
 	"github.com/Socialpranker/actdbg/internal/doctor"
 	"github.com/Socialpranker/actdbg/internal/enginerun"
 	"github.com/Socialpranker/actdbg/internal/fidelity"
+	"github.com/Socialpranker/actdbg/internal/replay"
 	"github.com/Socialpranker/actdbg/internal/shellenv"
 	"github.com/Socialpranker/actdbg/internal/snapshot"
 	"github.com/Socialpranker/actdbg/internal/state"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 const usage = `actdbg %s — a debugger for GitHub Actions, locally
 
 USAGE
   actdbg run    [flags]    run a workflow; stop at the failed step; offer a shell
   actdbg shell             re-enter the last failed step's container
+  actdbg replay <run-url>  reproduce a real failed GitHub run locally, then debug it
   actdbg back N [--cmd c]  time-travel: container state as of right after step N
   actdbg rerun --from N    fix the workflow, then re-run from step N (run-steps)
   actdbg diff [N]          step x-ray: files touched + $GITHUB_ENV delta per step
@@ -66,6 +68,8 @@ func main() {
 		err = cmdShell()
 	case "check":
 		err = cmdCheck(os.Args[2:])
+	case "replay":
+		err = cmdReplay(os.Args[2:])
 	case "back":
 		err = cmdBack(os.Args[2:])
 	case "rerun":
@@ -135,6 +139,49 @@ func cmdShell() error {
 		return fmt.Errorf("no stopped step found (%v) — run 'actdbg run' first", err)
 	}
 	return shellenv.Enter(st)
+}
+
+func cmdReplay(args []string) error {
+	fs := flag.NewFlagSet("replay", flag.ExitOnError)
+	here := fs.Bool("here", false, "run on the current checkout even if it differs from the run's commit")
+	noShell := fs.Bool("no-shell", false, "do not offer a shell on failure")
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return fmt.Errorf("usage: actdbg replay <github-run-url> — run it inside a clone of that repo")
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	owner, repo, id, err := replay.ParseURL(args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("⤓ fetching run %s (%s/%s)…\n", id, owner, repo)
+	ri, err := replay.Fetch(owner, repo, id)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  failed: job %q, step %d %q · event %s · commit %.10s\n",
+		ri.FailedJob, ri.FailedNumber, ri.FailedStep, ri.Event, ri.HeadSHA)
+	if ok, local := replay.CheckHead(ri.HeadSHA); !ok {
+		if local == "" {
+			return fmt.Errorf("not inside a git repo — clone %s/%s first", owner, repo)
+		}
+		if !*here {
+			return fmt.Errorf("your checkout (%.10s) differs from the run's commit %.10s.\nEither:  git fetch && git checkout %.10s   (exact replay)\nOr:      actdbg replay %s --here              (replay on current tree)",
+				local, ri.HeadSHA, ri.HeadSHA, args[0])
+		}
+		fmt.Printf("  ⚠ replaying on current tree (%.10s), not the run's commit\n", local)
+	}
+	jobID, err := replay.JobIDByName(ri.Path, ri.FailedJob)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  replaying job %q locally — the debugger takes over at the failure.\n  honesty: local ≠ GitHub (images, secrets, OIDC) — `actdbg check` explains.\n\n", jobID)
+	return enginerun.Run(enginerun.Options{
+		WorkflowPath: ri.Path, Job: jobID, Event: ri.Event,
+		Platforms: enginerun.ParsePlatforms(nil), NoShell: *noShell,
+		Secrets: map[string]string{},
+	})
 }
 
 func cmdBack(args []string) error {

@@ -106,8 +106,20 @@ the job container after every step. That unlocks:
 Snapshots cost disk while you debug; `actdbg clean` removes all of it.
 `--no-snapshot` turns the whole thing off.
 
-Coming next (v0.3): `replay <github-run-url>` — reproduce a real failed run
-locally from its URL; re-running `uses:` steps; a lazygit-style TUI.
+**Replay (v0.3).** CI is red? Paste the run URL from inside a clone of the repo:
+
+```
+actdbg replay https://github.com/you/repo/actions/runs/123456
+```
+
+actdbg asks the GitHub API what failed (job, step, event, commit), checks your
+checkout matches the run's commit (or `--here` to override), and re-runs that
+job locally — the debugger takes over at the failure: shell, `back`, `rerun`.
+Private repos: set `GITHUB_TOKEN`. Honest limits: GitHub-side secrets and OIDC
+don't exist locally, so steps that need them fail differently — `actdbg check`
+tells you which ones before you chase a ghost.
+
+Coming next: re-running `uses:` steps · a lazygit-style TUI · matrix pickers.
 
 ## License
 
