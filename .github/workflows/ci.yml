@@ -73,7 +73,29 @@ jobs:
           C=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.actdbg/last.json')))['container'])")
           docker exec "$C" cat /var/run/act/workflow/envs.txt
           docker exec "$C" sh -c 'cat /var/run/act/workflow/envs.txt' | grep -q 'DYN_VAR=set-by-step'
+      - name: e2e v0.2 — snapshots + x-ray recorded
+        run: |
+          ls ~/.actdbg/runs/*.json
+          $GITHUB_WORKSPACE/actdbg diff | tee diff.log
+          grep -q 'step 2 "Build"' diff.log
+          grep -q 'env DYN_VAR=set-by-step' diff.log
+          docker images actdbg/snap --format '{{.Tag}}' | grep -q -- '-test-2'
+      - name: e2e v0.2 — back (restore step 1 state)
+        run: |
+          cd /tmp/proj
+          $GITHUB_WORKSPACE/actdbg back 1 --cmd 'echo BACK_OK && pwd' | tee back.log
+          grep -q BACK_OK back.log
+      - name: e2e v0.2 — fix workflow, rerun --from 2
+        run: |
+          cd /tmp/proj
+          sed -i 's/exit 127/echo fixed/' .github/workflows/demo.yml
+          $GITHUB_WORKSPACE/actdbg rerun --from 2 | tee rerun.log
+          grep -q '✅ step 2 done' rerun.log
+          grep -q 'unreachable' rerun.log
+          grep -q 're-run from step 2 finished' rerun.log
       - name: e2e — clean
         run: |
           $GITHUB_WORKSPACE/actdbg clean
           [ -z "$(docker ps -aq --filter name=act-)" ]
+          [ -z "$(docker ps -aq --filter name=actdbg-tt-)" ]
+          [ -z "$(docker images -q actdbg/snap)" ]

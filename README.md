@@ -92,10 +92,22 @@ so the failed job container survives, env reconstruction (workflow YAML chain
 + `$GITHUB_ENV`/`$GITHUB_PATH` deltas read from the container), and a saved
 state so `actdbg shell` works any time later.
 
-Coming next (v0.2–v0.3): **time-travel** — a snapshot after every step, so you
-can `rerun --from N` in seconds instead of re-running the whole job; per-step
-file/env diffs ("step touched these 7 files"); `replay <github-run-url>` —
-reproduce a real failed run locally from its URL.
+**Time-travel (v0.2).** With snapshots on (default), actdbg `docker commit`s
+the job container after every step. That unlocks:
+
+- `actdbg back 3` — a fresh container with the exact state *right after step
+  3*, env included. `--cmd 'ls dist/'` for one-off inspection.
+- `actdbg rerun --from 5` — fix the workflow, then re-run **from the failed
+  step** in seconds instead of re-running the whole job. v0.2 re-runs `run:`
+  steps; a downstream `uses:` action stops honestly with a message.
+- `actdbg diff` — step x-ray: which files each step created/changed/deleted
+  and what it appended to `$GITHUB_ENV`, with timings.
+
+Snapshots cost disk while you debug; `actdbg clean` removes all of it.
+`--no-snapshot` turns the whole thing off.
+
+Coming next (v0.3): `replay <github-run-url>` — reproduce a real failed run
+locally from its URL; re-running `uses:` steps; a lazygit-style TUI.
 
 ## License
 

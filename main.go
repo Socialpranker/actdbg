@@ -9,21 +9,26 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Socialpranker/actdbg/internal/doctor"
 	"github.com/Socialpranker/actdbg/internal/enginerun"
 	"github.com/Socialpranker/actdbg/internal/fidelity"
 	"github.com/Socialpranker/actdbg/internal/shellenv"
+	"github.com/Socialpranker/actdbg/internal/snapshot"
 	"github.com/Socialpranker/actdbg/internal/state"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 const usage = `actdbg %s — a debugger for GitHub Actions, locally
 
 USAGE
   actdbg run    [flags]    run a workflow; stop at the failed step; offer a shell
   actdbg shell             re-enter the last failed step's container
+  actdbg back N [--cmd c]  time-travel: container state as of right after step N
+  actdbg rerun --from N    fix the workflow, then re-run from step N (run-steps)
+  actdbg diff [N]          step x-ray: files touched + $GITHUB_ENV delta per step
   actdbg check  [flags]    fidelity report: where a local run differs from GitHub
   actdbg doctor            diagnose Docker / images / common act pitfalls
   actdbg clean             remove act-* containers and networks left behind
@@ -61,6 +66,12 @@ func main() {
 		err = cmdShell()
 	case "check":
 		err = cmdCheck(os.Args[2:])
+	case "back":
+		err = cmdBack(os.Args[2:])
+	case "rerun":
+		err = cmdRerun(os.Args[2:])
+	case "diff":
+		err = cmdDiff(os.Args[2:])
 	case "doctor":
 		err = doctor.Run(os.Stdout)
 	case "clean":
@@ -100,6 +111,7 @@ func cmdRun(args []string) error {
 	fs.BoolVar(&opts.Bind, "bind", false, "bind workdir instead of copy")
 	fs.BoolVar(&opts.NoShell, "no-shell", false, "do not offer a shell on failure")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "full act logs")
+	fs.BoolVar(&opts.NoSnapshot, "no-snapshot", false, "disable per-step snapshots (time-travel)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -123,6 +135,65 @@ func cmdShell() error {
 		return fmt.Errorf("no stopped step found (%v) — run 'actdbg run' first", err)
 	}
 	return shellenv.Enter(st)
+}
+
+func cmdBack(args []string) error {
+	fs := flag.NewFlagSet("back", flag.ExitOnError)
+	cmd := fs.String("cmd", "", "run one command instead of an interactive shell")
+	var rest []string
+	for _, a := range args { // allow `back 2 --cmd ...` order
+		rest = append(rest, a)
+	}
+	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		if err := fs.Parse(rest[1:]); err != nil {
+			return err
+		}
+	} else {
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+	}
+	n, err := snapshot.BackNumber(args)
+	if err != nil {
+		return err
+	}
+	rf, err := snapshot.LoadLatestRun()
+	if err != nil {
+		return err
+	}
+	c, err := rf.Restore("", n)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("⏪ state after step %d restored into %s\n", n, c)
+	banner := fmt.Sprintf("actdbg: time-travel — container state as it was right after step %d. exit to leave; cleanup: docker rm -f %s", n, c)
+	return snapshot.EnterRestored(c, rf.EnvUpTo("", n), banner, *cmd)
+}
+
+func cmdRerun(args []string) error {
+	fs := flag.NewFlagSet("rerun", flag.ExitOnError)
+	from := fs.Int("from", 0, "step number to re-run from (snapshot of the previous step is restored)")
+	job := fs.String("j", "", "job id (defaults to the only/last job)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *from == 0 {
+		return fmt.Errorf("usage: actdbg rerun --from N (e.g. the step that failed — fix the workflow first)")
+	}
+	return snapshot.Rerun(*from, *job)
+}
+
+func cmdDiff(args []string) error {
+	n := 0
+	if len(args) > 0 {
+		fmt.Sscanf(args[0], "%d", &n)
+	}
+	rf, err := snapshot.LoadLatestRun()
+	if err != nil {
+		return err
+	}
+	fmt.Print(rf.RenderDiff(n))
+	return nil
 }
 
 func cmdCheck(args []string) error {

@@ -32,6 +32,9 @@ type Tracker struct {
 	curKey    string
 	// NameFor resolves a display name for (jobID, stage, stepID); optional.
 	NameFor func(jobID, stage, stepID string) string
+	// OnStepStart/OnStepResult are optional callbacks (Main stage only).
+	OnStepStart  func(jobID, stepID string)
+	OnStepResult func(jobID, stepID, result string) string // returns extra line to print
 }
 
 func New(out io.Writer, verbose bool) *Tracker {
@@ -101,6 +104,9 @@ func (t *Tracker) Fire(e *logrus.Entry) error {
 		if !t.Verbose && stage == "Main" {
 			fmt.Fprintf(t.Out, "▶ %s\n", t.displayName(st))
 		}
+		if t.OnStepStart != nil && stage == "Main" {
+			t.OnStepStart(jobID, stepID)
+		}
 	}
 	if raw, _ := e.Data["raw_output"].(bool); raw {
 		lines := t.tail[k]
@@ -121,6 +127,11 @@ func (t *Tracker) Fire(e *logrus.Entry) error {
 				mark = "⏭"
 			}
 			fmt.Fprintf(t.Out, "%s %s\n", mark, t.displayName(st))
+		}
+		if t.OnStepResult != nil && stage == "Main" {
+			if extra := t.OnStepResult(jobID, stepID, st.Result); extra != "" && !t.Verbose {
+				fmt.Fprintln(t.Out, extra)
+			}
 		}
 	}
 	return nil

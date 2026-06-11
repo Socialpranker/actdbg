@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Socialpranker/actdbg/internal/shellenv"
+	"github.com/Socialpranker/actdbg/internal/snapshot"
 	"github.com/Socialpranker/actdbg/internal/state"
 	"github.com/Socialpranker/actdbg/internal/timeline"
 )
@@ -35,6 +36,7 @@ type Options struct {
 	Bind         bool
 	NoShell      bool
 	Verbose      bool
+	NoSnapshot   bool
 }
 
 // DefaultPlatforms mirrors act's commonly used medium images.
@@ -156,6 +158,13 @@ func Run(o Options) error {
 		}
 		return ""
 	}
+	mgr := snapshot.NewManager(wfPath, o.Event, !o.NoSnapshot)
+	mgr.NameFor = func(jobID, stepID string) (string, int) {
+		si := stepsByJob[jobID][stepID]
+		return si.Name, si.Number
+	}
+	tr.OnStepStart = mgr.StepStarted
+	tr.OnStepResult = mgr.OnStepResult
 
 	workdir, _ := filepath.Abs(".")
 	cfg := &runner.Config{
@@ -232,6 +241,9 @@ func Run(o Options) error {
 	}
 	fmt.Printf("   container kept alive: %s\n", container)
 
+	if !o.NoSnapshot {
+		fmt.Printf("   time-travel ready: actdbg back N · actdbg rerun --from %d · actdbg diff\n", si.Number)
+	}
 	if o.NoShell || !isTerminal() {
 		fmt.Println("\n→ enter it later with: actdbg shell")
 		return nil
@@ -330,6 +342,7 @@ func Clean(w *os.File) error {
 			fmt.Fprintln(w, "removed network", n)
 		}
 	}
+	snapshot.CleanArtifacts(w)
 	if len(names) == 0 {
 		fmt.Fprintln(w, "nothing to clean")
 	}
