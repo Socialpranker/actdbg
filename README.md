@@ -4,9 +4,19 @@
 
 **A debugger for GitHub Actions. Locally.**
 
+[![CI](https://github.com/Socialpranker/actdbg/actions/workflows/ci.yml/badge.svg)](https://github.com/Socialpranker/actdbg/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/Socialpranker/actdbg)](https://github.com/Socialpranker/actdbg/releases)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Your workflow fails → actdbg stops at the failed step → you get a shell
 **inside the job container, with the step's environment** → you poke around,
 fix, re-run. No more `git commit -m "fix ci" ×18`.
+
+![demo](assets/demo.gif)
+
+```bash
+go install github.com/Socialpranker/actdbg@latest
+```
 
 `ui` · `run` · `shell` · `replay` · `back` · `rerun` · `diff` · `check` · `doctor` · `clean`
 
