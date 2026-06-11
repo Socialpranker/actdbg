@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/nektos/act/pkg/model"
 	"gopkg.in/yaml.v3"
+
+	"github.com/Socialpranker/actdbg/internal/cmdlog"
 )
 
 type Record struct {
@@ -72,7 +73,7 @@ func runsDir() string {
 func (m *Manager) Path() string { return filepath.Join(runsDir(), m.RunID+".json") }
 
 func dockerOut(args ...string) string {
-	out, _ := exec.Command("docker", args...).Output()
+	out, _ := cmdlog.Docker(args...).Output()
 	return string(out)
 }
 
@@ -121,7 +122,7 @@ func (m *Manager) OnStepResult(jobID, stepID, result string) string {
 		name, num = m.NameFor(jobID, stepID)
 	}
 	img := fmt.Sprintf("actdbg/snap:%s-%s-%d", m.RunID, jobID, num)
-	_ = exec.Command("docker", "commit", "-p", c, img).Run()
+	_ = cmdlog.Docker("commit", "-p", c, img).Run()
 
 	// cumulative docker diff -> delta vs previous step
 	cur := map[string]string{}
@@ -262,7 +263,7 @@ func (rf *RunFile) Restore(job string, num int) (container string, err error) {
 	name := fmt.Sprintf("actdbg-tt-%d", time.Now().UnixNano()%1e9)
 	args := append([]string{"run", "-d", "--name", name, "--entrypoint", ""}, rf.Mounts...)
 	args = append(args, r.Image, "tail", "-f", "/dev/null")
-	if out, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
+	if out, err := cmdlog.Docker(args...).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("restore: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return name, nil
@@ -437,7 +438,7 @@ func Rerun(from int, job string) error {
 		sb.WriteString(st.Run)
 
 		fmt.Printf("▶ step %d/%d %s\n", st.Number, len(steps), st.Name)
-		put := exec.Command("docker", "exec", "-i", c, "sh", "-c", "cat > /tmp/actdbg-step.sh")
+		put := cmdlog.Docker("exec", "-i", c, "sh", "-c", "cat > /tmp/actdbg-step.sh")
 		put.Stdin = strings.NewReader(sb.String())
 		if err := put.Run(); err != nil {
 			return fmt.Errorf("inject step script: %w", err)
@@ -447,7 +448,7 @@ func Rerun(from int, job string) error {
 			runArgs = append(runArgs, "-w", wd)
 		}
 		runArgs = append(runArgs, c, "sh", "-c", "bash /tmp/actdbg-step.sh 2>&1 || sh /tmp/actdbg-step.sh 2>&1")
-		cmd := exec.Command("docker", runArgs...)
+		cmd := cmdlog.Docker(runArgs...)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			fmt.Printf("❌ step %d failed again — container %s kept for inspection (docker exec -it %s sh)\n", st.Number, c, c)
@@ -466,12 +467,12 @@ func Rerun(from int, job string) error {
 // CleanArtifacts removes snapshot images and tt-containers.
 func CleanArtifacts(w *os.File) {
 	for _, c := range strings.Fields(dockerOut("ps", "-aq", "--filter", "name=actdbg-tt-")) {
-		if exec.Command("docker", "rm", "-f", c).Run() == nil {
+		if cmdlog.Docker("rm", "-f", c).Run() == nil {
 			fmt.Fprintln(w, "removed container", c)
 		}
 	}
 	for _, i := range strings.Fields(dockerOut("images", "actdbg/snap", "-q")) {
-		if exec.Command("docker", "rmi", "-f", i).Run() == nil {
+		if cmdlog.Docker("rmi", "-f", i).Run() == nil {
 			fmt.Fprintln(w, "removed snapshot image", i)
 		}
 	}
@@ -493,7 +494,7 @@ func EnterRestored(container string, env map[string]string, banner, cmd string) 
 	if banner != "" {
 		fmt.Fprintf(&sb, "echo %s\n", quote(banner))
 	}
-	put := exec.Command("docker", "exec", "-i", container, "sh", "-c", "cat > /tmp/actdbg-env.sh")
+	put := cmdlog.Docker("exec", "-i", container, "sh", "-c", "cat > /tmp/actdbg-env.sh")
 	put.Stdin = strings.NewReader(sb.String())
 	if err := put.Run(); err != nil {
 		return fmt.Errorf("inject env: %w", err)
@@ -511,7 +512,7 @@ func EnterRestored(container string, env map[string]string, banner, cmd string) 
 		sh = ". /tmp/actdbg-env.sh >/dev/null; " + cmd
 	}
 	args = append(args, container, "sh", "-c", sh)
-	c := exec.Command("docker", args...)
+	c := cmdlog.Docker(args...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return c.Run()
 }

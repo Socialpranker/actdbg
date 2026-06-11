@@ -10,10 +10,10 @@ package shellenv
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 
+	"github.com/Socialpranker/actdbg/internal/cmdlog"
 	"github.com/Socialpranker/actdbg/internal/state"
 )
 
@@ -134,7 +134,7 @@ func BuildScript(st *state.State, dynamicEnv map[string]string, extraPaths []str
 }
 
 func containerCat(container, path string) string {
-	out, err := exec.Command("docker", "exec", container, "cat", path).Output()
+	out, err := cmdlog.Docker("exec", container, "cat", path).Output()
 	if err != nil {
 		return ""
 	}
@@ -144,7 +144,7 @@ func containerCat(container, path string) string {
 // Enter reconstructs the env and replaces stdio with an interactive shell in
 // the saved container.
 func Enter(st *state.State) error {
-	if err := exec.Command("docker", "inspect", st.Container).Run(); err != nil {
+	if err := cmdlog.Docker("inspect", st.Container).Run(); err != nil {
 		return fmt.Errorf("container %s is gone (docker inspect failed) — re-run 'actdbg run'", st.Container)
 	}
 	dyn := ParseGithubEnvFile(containerCat(st.Container, EnvsFilePath))
@@ -155,7 +155,7 @@ func Enter(st *state.State) error {
 	script := BuildScript(st, dyn, paths)
 
 	// place the script inside the container via stdin (no temp files on host)
-	put := exec.Command("docker", "exec", "-i", st.Container, "sh", "-c", "cat > /tmp/actdbg-env.sh")
+	put := cmdlog.Docker("exec", "-i", st.Container, "sh", "-c", "cat > /tmp/actdbg-env.sh")
 	put.Stdin = strings.NewReader(script)
 	if out, err := put.CombinedOutput(); err != nil {
 		return fmt.Errorf("placing env script: %v (%s)", err, strings.TrimSpace(string(out)))
@@ -167,7 +167,7 @@ func Enter(st *state.State) error {
 	}
 	args = append(args, st.Container, "sh", "-c",
 		". /tmp/actdbg-env.sh; exec bash 2>/dev/null || exec sh")
-	cmd := exec.Command("docker", args...)
+	cmd := cmdlog.Docker(args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }

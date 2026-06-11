@@ -8,7 +8,7 @@ Your workflow fails → actdbg stops at the failed step → you get a shell
 **inside the job container, with the step's environment** → you poke around,
 fix, re-run. No more `git commit -m "fix ci" ×18`.
 
-`run` · `shell` · `check` · `doctor` · `clean`
+`ui` · `run` · `shell` · `replay` · `back` · `rerun` · `diff` · `check` · `doctor` · `clean`
 
 </div>
 
@@ -60,6 +60,7 @@ Requires Docker (the same requirement act has).
 
 | command | what it does |
 |---|---|
+| `actdbg ui` | lazygit-style TUI: steps left, live log right, command log below (also: bare `actdbg` in a terminal) |
 | `actdbg run` | run the workflow; stop at the first failed step; offer a shell |
 | `actdbg shell` | re-enter the last failed step's container later |
 | `actdbg check` | **fidelity report**: where a local run is known to differ from GitHub — per *your* workflow, with line numbers |
@@ -67,7 +68,23 @@ Requires Docker (the same requirement act has).
 | `actdbg clean` | remove `act-*` containers and networks left behind |
 
 Useful flags: `-j job` · `-e event` · `-W file` · `--secrets-file .secrets` ·
-`-s KEY=VAL` · `-P platform=image` · `--arch linux/amd64` · `--no-shell` · `--verbose`.
+`-s KEY=VAL` · `-P platform=image` · `--matrix key=val` · `--arch linux/amd64` ·
+`--no-shell` · `--show-commands` · `--verbose`.
+
+## TUI (v0.4, experimental)
+
+`actdbg ui` — or just `actdbg` in a terminal — opens a lazygit-style
+interface: jobs and steps on the left with live `▶ ✅ ❌ ⏭` statuses, the
+selected step's log streaming on the right, and the last docker commands
+actdbg executed at the bottom. `r` runs the workflow (a picker appears first
+when a job has `strategy.matrix`), `s` drops you into the failed step's
+container, `c` / `d` show the fidelity and doctor reports, `?` lists the keys.
+It's experimental: layout quirks are likely; screenshot once it earns one.
+
+**Command log.** Borrowed from lazygit's best idea: actdbg never hides what
+it does to your machine. Every docker command it executes is appended to
+`~/.actdbg/commands.log`, mirrored live in the TUI's bottom panel, and
+printed by `actdbg run --show-commands`.
 
 ## Honesty (read this once)
 
@@ -119,7 +136,7 @@ Private repos: set `GITHUB_TOKEN`. Honest limits: GitHub-side secrets and OIDC
 don't exist locally, so steps that need them fail differently — `actdbg check`
 tells you which ones before you chase a ghost.
 
-Coming next: re-running `uses:` steps · a lazygit-style TUI · matrix pickers.
+Coming next: re-running `uses:` steps.
 
 ## License
 

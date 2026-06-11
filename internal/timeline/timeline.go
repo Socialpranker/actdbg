@@ -35,6 +35,8 @@ type Tracker struct {
 	// OnStepStart/OnStepResult are optional callbacks (Main stage only).
 	OnStepStart  func(jobID, stepID string)
 	OnStepResult func(jobID, stepID, result string) string // returns extra line to print
+	// OnLine receives every raw output line as it arrives (any stage).
+	OnLine func(jobID, stepID, line string)
 }
 
 func New(out io.Writer, verbose bool) *Tracker {
@@ -109,12 +111,16 @@ func (t *Tracker) Fire(e *logrus.Entry) error {
 		}
 	}
 	if raw, _ := e.Data["raw_output"].(bool); raw {
+		line := strings.TrimRight(e.Message, "\n")
 		lines := t.tail[k]
-		lines = append(lines, strings.TrimRight(e.Message, "\n"))
+		lines = append(lines, line)
 		if len(lines) > 40 {
 			lines = lines[len(lines)-40:]
 		}
 		t.tail[k] = lines
+		if t.OnLine != nil {
+			t.OnLine(jobID, stepID, line)
+		}
 		return nil
 	}
 	if res, ok := e.Data["stepResult"]; ok {

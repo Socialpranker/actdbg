@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Socialpranker/actdbg/internal/cmdlog"
 	"github.com/Socialpranker/actdbg/internal/doctor"
 	"github.com/Socialpranker/actdbg/internal/enginerun"
 	"github.com/Socialpranker/actdbg/internal/fidelity"
@@ -18,13 +19,16 @@ import (
 	"github.com/Socialpranker/actdbg/internal/shellenv"
 	"github.com/Socialpranker/actdbg/internal/snapshot"
 	"github.com/Socialpranker/actdbg/internal/state"
+	"github.com/Socialpranker/actdbg/internal/ui"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 const usage = `actdbg %s — a debugger for GitHub Actions, locally
 
 USAGE
+  actdbg                   in a terminal: open the TUI (same as actdbg ui)
+  actdbg ui     [flags]    lazygit-style TUI: steps left, live log right, command log below
   actdbg run    [flags]    run a workflow; stop at the failed step; offer a shell
   actdbg shell             re-enter the last failed step's container
   actdbg replay <run-url>  reproduce a real failed GitHub run locally, then debug it
@@ -44,19 +48,29 @@ RUN FLAGS
   --secrets-file f   KEY=VALUE lines (like act's .secrets); values never printed
   -s KEY=VALUE       set a secret (repeatable)
   -P plat=image      map runs-on platform to image (repeatable)
+  --matrix key=val   run only matching strategy.matrix combination(s) (repeatable)
   --arch a           container architecture, e.g. linux/amd64
   --bind             bind the working directory instead of copying it
   --no-shell         do not offer a shell on failure (CI/scripted use)
+  --show-commands    afterwards, print the docker commands actdbg executed
   --verbose          stream full act logs instead of the condensed timeline
 
 A failed step leaves its container alive. 'actdbg shell' re-enters it with the
 step's environment reconstructed (workflow env chain + $GITHUB_ENV deltas).
+Every docker command actdbg runs is logged to ~/.actdbg/commands.log.
 Reality check: a green local run does not guarantee green on GitHub — run
 'actdbg check' to see what differs for YOUR workflow.
 `
 
 func main() {
 	if len(os.Args) < 2 {
+		if isTTY(os.Stdin) && isTTY(os.Stdout) {
+			if err := cmdUI(nil); err != nil {
+				fmt.Fprintln(os.Stderr, "actdbg:", err)
+				os.Exit(1)
+			}
+			return
+		}
 		fmt.Printf(usage, version)
 		os.Exit(2)
 	}
@@ -64,6 +78,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		err = cmdRun(os.Args[2:])
+	case "ui":
+		err = cmdUI(os.Args[2:])
 	case "shell":
 		err = cmdShell()
 	case "check":
@@ -103,7 +119,8 @@ func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	opts := enginerun.Options{}
-	var secretKVs, platforms repeated
+	var secretKVs, platforms, matrixKVs repeated
+	var showCmds bool
 	fs.StringVar(&opts.WorkflowPath, "W", ".github/workflows", "workflow file or dir")
 	fs.StringVar(&opts.Job, "j", "", "job id")
 	fs.StringVar(&opts.Event, "e", "push", "event name")
@@ -111,9 +128,11 @@ func cmdRun(args []string) error {
 	fs.StringVar(&opts.SecretsFile, "secrets-file", "", "secrets file (KEY=VALUE lines)")
 	fs.Var(&secretKVs, "s", "secret KEY=VALUE")
 	fs.Var(&platforms, "P", "platform=image")
+	fs.Var(&matrixKVs, "matrix", "matrix key=value filter (repeatable)")
 	fs.StringVar(&opts.Arch, "arch", "", "container architecture (e.g. linux/amd64)")
 	fs.BoolVar(&opts.Bind, "bind", false, "bind workdir instead of copy")
 	fs.BoolVar(&opts.NoShell, "no-shell", false, "do not offer a shell on failure")
+	fs.BoolVar(&showCmds, "show-commands", false, "afterwards, print the docker commands actdbg executed")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "full act logs")
 	fs.BoolVar(&opts.NoSnapshot, "no-snapshot", false, "disable per-step snapshots (time-travel)")
 	if err := fs.Parse(args); err != nil {
@@ -125,12 +144,66 @@ func cmdRun(args []string) error {
 		return err
 	}
 	opts.Platforms = enginerun.ParsePlatforms(platforms)
+	opts.Matrix, err = enginerun.ParseMatrix(matrixKVs)
+	if err != nil {
+		return err
+	}
 
 	// Honest pre-flight: a short fidelity summary before running.
 	if findings, ferr := fidelity.CheckPath(opts.WorkflowPath, opts.Job); ferr == nil && len(findings) > 0 {
 		fmt.Println(fidelity.Summary(findings))
 	}
-	return enginerun.Run(opts)
+	runErr := enginerun.Run(opts)
+	if showCmds {
+		printCommandLog()
+	}
+	return runErr
+}
+
+func printCommandLog() {
+	cmds := cmdlog.Tail(20)
+	if len(cmds) == 0 {
+		fmt.Println("\ncommands actdbg ran: none recorded")
+		return
+	}
+	fmt.Println("\ncommands actdbg ran (newest last):")
+	for _, c := range cmds {
+		fmt.Println("  $", c)
+	}
+	fmt.Println("  full log:", cmdlog.Path())
+}
+
+func cmdUI(args []string) error {
+	fs := flag.NewFlagSet("ui", flag.ExitOnError)
+	wf := fs.String("W", ".github/workflows", "workflow file or dir (dir → its first workflow)")
+	job := fs.String("j", "", "job id")
+	event := fs.String("e", "push", "event name")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	path, err := ui.PickWorkflow(*wf)
+	if err != nil {
+		return err
+	}
+	st, err := ui.Start(enginerun.Options{
+		WorkflowPath: path,
+		Job:          *job,
+		Event:        *event,
+		Platforms:    enginerun.ParsePlatforms(nil),
+		Secrets:      map[string]string{},
+	})
+	if err != nil {
+		return err
+	}
+	if st != nil {
+		return shellenv.Enter(st)
+	}
+	return nil
+}
+
+func isTTY(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
 func cmdShell() error {

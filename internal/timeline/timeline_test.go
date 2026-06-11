@@ -68,6 +68,17 @@ func TestTrackerRingBuffer(t *testing.T) {
 	}
 }
 
+func TestOnLineCallback(t *testing.T) {
+	tr := New(&bytes.Buffer{}, false)
+	var got []string
+	tr.OnLine = func(job, step, line string) { got = append(got, job+"/"+step+": "+line) }
+	_ = tr.Fire(entry(logrus.Fields{"jobID": "j", "stage": "Main", "stepID": []string{"0"}, "raw_output": true}, "hello\n"))
+	_ = tr.Fire(entry(logrus.Fields{"jobID": "j", "stage": "Main", "stepID": []string{"0"}, "raw_output": true}, "world"))
+	if len(got) != 2 || got[0] != "j/0: hello" || got[1] != "j/0: world" {
+		t.Errorf("OnLine wrong: %v", got)
+	}
+}
+
 func TestNoFailure(t *testing.T) {
 	tr := New(&bytes.Buffer{}, false)
 	_ = tr.Fire(entry(logrus.Fields{"jobID": "j", "stage": "Main", "stepID": []string{"0"}, "stepResult": "success"}, ""))
