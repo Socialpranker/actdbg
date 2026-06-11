@@ -1,0 +1,79 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -o actdbg .
+      - name: smoke — fidelity check on a fixture
+        run: |
+          ./actdbg version
+          ./actdbg check -W .github/workflows/ci.yml || true
+          ./actdbg doctor
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go build -o actdbg .
+      - name: e2e — run a failing workflow, expect stop-at-step + saved state
+        run: |
+          mkdir -p /tmp/proj/.github/workflows
+          cat > /tmp/proj/.github/workflows/demo.yml <<'EOF'
+          name: demo
+          on: [push]
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              env: { APP_MODE: debug }
+              steps:
+                - name: Hello
+                  run: echo hello-world
+                - name: Build
+                  env: { STEP_VAR: present }
+                  run: |
+                    echo compiling...
+                    echo "DYN_VAR=set-by-step" >> "$GITHUB_ENV"
+                    exit 127
+                - name: Never runs
+                  run: echo unreachable
+          EOF
+          cd /tmp/proj
+          set +e
+          $GITHUB_WORKSPACE/actdbg run --no-shell -P ubuntu-latest=node:16-buster-slim 2>&1 | tee out.log
+          set -e
+          grep -q 'stopped: step 2/3 "Build"' out.log
+          grep -q 'container kept alive' out.log
+          test -f ~/.actdbg/last.json
+          python3 - <<'PY'
+          import json, os
+          st = json.load(open(os.path.expanduser("~/.actdbg/last.json")))
+          assert st["step_name"] == "Build", st
+          assert st["step_number"] == 2 and st["total_steps"] == 3, st
+          assert st["env"].get("APP_MODE") == "debug", st
+          assert st["env"].get("STEP_VAR") == "present", st
+          assert st["container"], st
+          print("state OK:", st["container"])
+          PY
+      - name: e2e — shell env reconstruction inside the kept container
+        run: |
+          C=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.actdbg/last.json')))['container'])")
+          docker exec "$C" cat /var/run/act/workflow/envs.txt
+          docker exec "$C" sh -c 'cat /var/run/act/workflow/envs.txt' | grep -q 'DYN_VAR=set-by-step'
+      - name: e2e — clean
+        run: |
+          $GITHUB_WORKSPACE/actdbg clean
+          [ -z "$(docker ps -aq --filter name=act-)" ]
