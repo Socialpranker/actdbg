@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Socialpranker/actdbg/internal/cmdlog"
+	"github.com/Socialpranker/actdbg/internal/snapshot"
 	"github.com/Socialpranker/actdbg/internal/state"
 )
 
@@ -87,6 +88,25 @@ func ParseGithubEnvFile(content string) map[string]string {
 	return out
 }
 
+// MergeDynamicEnv combines the live $GITHUB_ENV file (as read from the container
+// right now) with the $GITHUB_ENV deltas accumulated across earlier steps.
+//
+// act zeroes envs.txt at the start of every step, so if the step that failed
+// wrote nothing to $GITHUB_ENV the live file is empty and any var an earlier
+// step exported would be lost. The accumulated deltas fill that gap. The live
+// file wins on conflict — it reflects the current (failed) step, which is the
+// freshest source.
+func MergeDynamicEnv(liveEnvsTxt string, accumulated map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range accumulated {
+		out[k] = v
+	}
+	for k, v := range ParseGithubEnvFile(liveEnvsTxt) { // live wins
+		out[k] = v
+	}
+	return out
+}
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -147,7 +167,14 @@ func Enter(st *state.State) error {
 	if err := cmdlog.Docker("inspect", st.Container).Run(); err != nil {
 		return fmt.Errorf("container %s is gone (docker inspect failed) — re-run 'actdbg run'", st.Container)
 	}
-	dyn := ParseGithubEnvFile(containerCat(st.Container, EnvsFilePath))
+	// Combine the live envs.txt with $GITHUB_ENV deltas accumulated by the
+	// snapshotter across earlier steps — act zeroes the live file each step, so
+	// on its own it loses vars an earlier step exported (see MergeDynamicEnv).
+	var accumulated map[string]string
+	if rf, err := snapshot.LoadLatestRun(); err == nil {
+		accumulated = rf.EnvUpTo(st.JobID, st.StepNumber)
+	}
+	dyn := MergeDynamicEnv(containerCat(st.Container, EnvsFilePath), accumulated)
 	var paths []string
 	if raw := containerCat(st.Container, PathsFilePath); raw != "" {
 		paths = strings.Split(strings.TrimSpace(raw), "\n")

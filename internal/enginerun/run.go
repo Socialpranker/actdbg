@@ -246,6 +246,10 @@ func RunWithTracker(o Options, tr *timeline.Tracker) (*RunResult, error) {
 		return nil, err
 	}
 
+	// Heads-up before a multi-gigabyte image pull so the first run doesn't
+	// look like a hang.
+	warnIfPullNeeded(plan, o.Platforms)
+
 	stepsByJob, totals, jobEnv := stepIndex(plan)
 
 	tr.NameFor = func(jobID, _, stepID string) string {
