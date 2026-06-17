@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Go modules — keep up with nektos/act and other deps. act ships patch
+  # releases regularly; falling behind means missing container.options and
+  # GITHUB_ENV-format fixes.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      act-and-runtime:
+        patterns:
+          - "github.com/nektos/act"
+
+  # GitHub Actions used in CI (actions/checkout, actions/setup-go, …).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
