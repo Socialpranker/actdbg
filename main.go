@@ -27,7 +27,7 @@ import (
 
 // version is overridden at release time via -ldflags "-X main.version=…"
 // (GoReleaser). The default is the in-development version.
-var version = "0.4.0"
+var version = "0.5.0"
 
 const usage = `actdbg %s — a debugger for GitHub Actions, locally
 

@@ -47,7 +47,7 @@ changelog:
       - "^chore:"
       - "Merge pull request"
 
-brews:
+homebrew_casks:
   - name: actdbg
     repository:
       owner: Socialpranker
@@ -55,8 +55,13 @@ brews:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/Socialpranker/actdbg"
     description: "A debugger for GitHub Actions, locally — stop at the failed step, drop into a shell with its environment."
-    license: "MIT"
-    # Docker is required at runtime; brew can't enforce it, so just note it.
+    # Docker is required at runtime; the cask can't enforce it, so just note it.
     caveats: "actdbg needs Docker running. Verify your setup with: actdbg doctor"
-    test: |
-      system "#{bin}/actdbg", "version"
+    # The binary isn't notarized; remove the quarantine attribute on install so
+    # macOS Gatekeeper doesn't block it.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/actdbg"]
+          end
