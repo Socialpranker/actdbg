@@ -122,7 +122,13 @@ func (m *Manager) OnStepResult(jobID, stepID, result string) string {
 		name, num = m.NameFor(jobID, stepID)
 	}
 	img := fmt.Sprintf("actdbg/snap:%s-%s-%d", m.RunID, jobID, num)
-	_ = cmdlog.Docker("commit", "-p", c, img).Run()
+	snapErr := cmdlog.Docker("commit", "-p", c, img).Run()
+	if snapErr != nil {
+		// A failed commit means time-travel (back/rerun/diff) will not work for
+		// this step. Stay honest instead of printing "snap ✓" below — silent
+		// failure here is how a user ends up with "no snapshot for step N".
+		fmt.Fprintf(os.Stderr, "actdbg: snapshot of step %d failed: %v\n  time-travel (back/rerun/diff) will not include this step.\n  common causes: disk full, rootless Docker/Podman without commit support.\n", num, snapErr)
+	}
 
 	// cumulative docker diff -> delta vs previous step
 	cur := map[string]string{}
@@ -171,20 +177,32 @@ func (m *Manager) OnStepResult(jobID, stepID, result string) string {
 	if t0, ok := m.started[jobID+"/"+stepID]; ok {
 		took = time.Since(t0).Round(time.Millisecond * 100).String()
 	}
+	// A step whose snapshot failed is recorded with an empty Image so that
+	// back/rerun can tell "no snapshot" apart from "snapshot lost".
+	recImg := img
+	if snapErr != nil {
+		recImg = ""
+	}
 	m.file = RunFile{RunID: m.RunID, Workflow: m.Workflow, Event: m.Event, Mounts: m.mounts,
 		Records: append(m.file.Records, Record{
 			Job: jobID, StepID: stepID, Name: name, Number: num, Result: result,
-			Image: img, Files: [3]int{added, changed, deleted}, FileSample: sample,
+			Image: recImg, Files: [3]int{added, changed, deleted}, FileSample: sample,
 			EnvDelta: delta, Took: took,
 		})}
 	b, _ := json.MarshalIndent(m.file, "", " ")
-	_ = os.WriteFile(m.Path(), b, 0o600)
+	if werr := os.WriteFile(m.Path(), b, 0o600); werr != nil {
+		fmt.Fprintf(os.Stderr, "actdbg: could not write snapshot index %s: %v\n  time-travel may be unavailable.\n", m.Path(), werr)
+	}
 
 	parts := []string{fmt.Sprintf("Δ %d file(s)", added+changed+deleted)}
 	if len(delta) > 0 {
 		parts = append(parts, fmt.Sprintf("+%d env", len(delta)))
 	}
-	parts = append(parts, "snap ✓")
+	if snapErr != nil {
+		parts = append(parts, "snap ✗")
+	} else {
+		parts = append(parts, "snap ✓")
+	}
 	return "   ⎘ " + strings.Join(parts, " · ")
 }
 
@@ -259,6 +277,9 @@ func (rf *RunFile) Restore(job string, num int) (container string, err error) {
 	r := rf.record(job, num)
 	if r == nil {
 		return "", fmt.Errorf("no snapshot for step %d (have: %s)", num, rf.have(job))
+	}
+	if r.Image == "" {
+		return "", fmt.Errorf("step %d ran but its snapshot failed to commit (disk full / rootless Docker?) — time-travel unavailable for this step", num)
 	}
 	name := fmt.Sprintf("actdbg-tt-%d", time.Now().UnixNano()%1e9)
 	args := append([]string{"run", "-d", "--name", name, "--entrypoint", ""}, rf.Mounts...)
