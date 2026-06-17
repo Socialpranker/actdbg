@@ -6,6 +6,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -380,7 +381,7 @@ func (m *Model) startRun(matrix map[string]map[string]bool) {
 		tr.OnStepStart = func(j, s string) { prog.Send(stepStartMsg{j, s}) }
 		tr.OnStepResult = func(j, s, r string) string { prog.Send(stepResultMsg{j, s, r}); return "" }
 		tr.OnLine = func(j, s, l string) { prog.Send(logLineMsg{j, s, l}) }
-		res, err := enginerun.RunWithTracker(o, tr)
+		res, err := enginerun.RunWithTracker(context.Background(), o, tr)
 		prog.Send(runDoneMsg{res, err})
 	}()
 }

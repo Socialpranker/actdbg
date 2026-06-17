@@ -239,7 +239,7 @@ type RunResult struct {
 // RunWithTracker plans and executes the workflow, reporting progress only
 // through tr (its Out writer and callbacks) — it never prints on its own.
 // The TUI uses it with tr.Out = io.Discard; Run wraps it for the CLI.
-func RunWithTracker(o Options, tr *timeline.Tracker) (*RunResult, error) {
+func RunWithTracker(ctx context.Context, o Options, tr *timeline.Tracker) (*RunResult, error) {
 	wfPath := o.WorkflowPath
 	plan, err := buildPlan(wfPath, o.Job, o.Event)
 	if err != nil {
@@ -304,11 +304,15 @@ func RunWithTracker(o Options, tr *timeline.Tracker) (*RunResult, error) {
 	}
 
 	before := listActContainers()
-	ctx := runner.WithJobLoggerFactory(context.Background(), tr)
-	execErr := r.NewPlanExecutor(plan)(ctx)
+	execErr := r.NewPlanExecutor(plan)(runner.WithJobLoggerFactory(ctx, tr))
 
 	fail := tr.FirstFailure()
 	if fail == nil {
+		if ctx.Err() != nil {
+			// Interrupted (Ctrl+C). The act container is left as-is on purpose;
+			// the caller prints the cleanup hint.
+			return nil, ctx.Err()
+		}
 		if execErr != nil {
 			return nil, fmt.Errorf("run error (no failed step recorded): %w", execErr)
 		}
@@ -352,10 +356,18 @@ func RunWithTracker(o Options, tr *timeline.Tracker) (*RunResult, error) {
 
 // Run executes the workflow and stops at the first failure (CLI mode:
 // prints the timeline to stdout and offers a shell).
-func Run(o Options) error {
+func Run(ctx context.Context, o Options) error {
 	tr := timeline.New(os.Stdout, o.Verbose)
-	res, err := RunWithTracker(o, tr)
+	res, err := RunWithTracker(ctx, o, tr)
 	if err != nil {
+		if ctx.Err() != nil {
+			// Ctrl+C: act unwinds on its own. The job container is kept (that's
+			// the point), but tell the user how to reclaim disk if they're done.
+			fmt.Fprintln(os.Stderr, "\n⏹  interrupted — stopping the run.")
+			fmt.Fprintln(os.Stderr, "   any act container and snapshot images are kept for inspection.")
+			fmt.Fprintln(os.Stderr, "   reclaim disk when done:  actdbg clean")
+			return nil
+		}
 		return err
 	}
 	if res.Failure == nil {

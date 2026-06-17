@@ -6,10 +6,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/Socialpranker/actdbg/internal/cmdlog"
 	"github.com/Socialpranker/actdbg/internal/doctor"
@@ -63,6 +66,11 @@ Reality check: a green local run does not guarantee green on GitHub — run
 `
 
 func main() {
+	// One Ctrl+C cancels the run gracefully (act unwinds, containers kept for
+	// inspection); a second Ctrl+C exits hard.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	if len(os.Args) < 2 {
 		if isTTY(os.Stdin) && isTTY(os.Stdout) {
 			if err := cmdUI(nil); err != nil {
@@ -77,7 +85,7 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "run":
-		err = cmdRun(os.Args[2:])
+		err = cmdRun(ctx, os.Args[2:])
 	case "ui":
 		err = cmdUI(os.Args[2:])
 	case "shell":
@@ -85,7 +93,7 @@ func main() {
 	case "check":
 		err = cmdCheck(os.Args[2:])
 	case "replay":
-		err = cmdReplay(os.Args[2:])
+		err = cmdReplay(ctx, os.Args[2:])
 	case "back":
 		err = cmdBack(os.Args[2:])
 	case "rerun":
@@ -116,7 +124,7 @@ type repeated []string
 func (r *repeated) String() string     { return fmt.Sprint(*r) }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 
-func cmdRun(args []string) error {
+func cmdRun(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	opts := enginerun.Options{}
 	var secretKVs, platforms, matrixKVs repeated
@@ -153,7 +161,7 @@ func cmdRun(args []string) error {
 	if findings, ferr := fidelity.CheckPath(opts.WorkflowPath, opts.Job); ferr == nil && len(findings) > 0 {
 		fmt.Println(fidelity.Summary(findings))
 	}
-	runErr := enginerun.Run(opts)
+	runErr := enginerun.Run(ctx, opts)
 	if showCmds {
 		printCommandLog()
 	}
@@ -214,7 +222,7 @@ func cmdShell() error {
 	return shellenv.Enter(st)
 }
 
-func cmdReplay(args []string) error {
+func cmdReplay(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	here := fs.Bool("here", false, "run on the current checkout even if it differs from the run's commit")
 	noShell := fs.Bool("no-shell", false, "do not offer a shell on failure")
@@ -250,7 +258,7 @@ func cmdReplay(args []string) error {
 		return err
 	}
 	fmt.Printf("  replaying job %q locally — the debugger takes over at the failure.\n  honesty: local ≠ GitHub (images, secrets, OIDC) — `actdbg check` explains.\n\n", jobID)
-	return enginerun.Run(enginerun.Options{
+	return enginerun.Run(ctx, enginerun.Options{
 		WorkflowPath: ri.Path, Job: jobID, Event: ri.Event,
 		Platforms: enginerun.ParsePlatforms(nil), NoShell: *noShell,
 		Secrets: map[string]string{},
