@@ -1,0 +1,62 @@
+# GoReleaser config for actdbg — binary releases + Homebrew tap.
+#
+# Prerequisites before the first release (one-time, manual — see RELEASING.md):
+#   1. Create an empty GitHub repo:  Socialpranker/homebrew-actdbg
+#   2. Create a PAT with `repo` scope, add it as the `TAP_GITHUB_TOKEN` secret
+#      on this repo (Settings → Secrets → Actions).
+#   3. Tag and push:  git tag v0.4.1 && git push origin v0.4.1
+#
+# Local dry-run (no publish):  goreleaser release --snapshot --clean
+version: 2
+
+project_name: actdbg
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    # actdbg drives Docker via act; the runner targets are Linux/macOS hosts.
+    # Windows is intentionally omitted (no Docker-on-Windows host support yet).
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+
+brews:
+  - name: actdbg
+    repository:
+      owner: Socialpranker
+      name: homebrew-actdbg
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/Socialpranker/actdbg"
+    description: "A debugger for GitHub Actions, locally — stop at the failed step, drop into a shell with its environment."
+    license: "MIT"
+    # Docker is required at runtime; brew can't enforce it, so just note it.
+    caveats: "actdbg needs Docker running. Verify your setup with: actdbg doctor"
+    test: |
+      system "#{bin}/actdbg", "version"

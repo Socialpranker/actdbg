@@ -25,7 +25,9 @@ import (
 	"github.com/Socialpranker/actdbg/internal/ui"
 )
 
-const version = "0.4.0"
+// version is overridden at release time via -ldflags "-X main.version=…"
+// (GoReleaser). The default is the in-development version.
+var version = "0.4.0"
 
 const usage = `actdbg %s — a debugger for GitHub Actions, locally
 
