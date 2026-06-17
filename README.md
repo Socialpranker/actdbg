@@ -15,7 +15,8 @@ fix, re-run. No more `git commit -m "fix ci" ×18`.
 ![demo](assets/demo.gif)
 
 ```bash
-go install github.com/Socialpranker/actdbg@latest
+brew install Socialpranker/actdbg/actdbg
+# or:  go install github.com/Socialpranker/actdbg@latest
 ```
 
 `ui` · `run` · `shell` · `replay` · `back` · `rerun` · `diff` · `check` · `doctor` · `clean`
@@ -60,11 +61,23 @@ the debug shell.
 
 ## Install
 
+**Homebrew** (macOS / Linux) — recommended:
+
+```bash
+brew install Socialpranker/actdbg/actdbg
+```
+
+**Go** — if you have a toolchain:
+
 ```bash
 go install github.com/Socialpranker/actdbg@latest
 ```
 
-Requires Docker (the same requirement act has).
+**Prebuilt binaries** for `linux`/`darwin` × `amd64`/`arm64` are attached to
+every [release](https://github.com/Socialpranker/actdbg/releases).
+
+Requires Docker (the same requirement act has). Verify your setup any time with
+`actdbg doctor`.
 
 ## Commands
 
@@ -73,9 +86,13 @@ Requires Docker (the same requirement act has).
 | `actdbg ui` | lazygit-style TUI: steps left, live log right, command log below (also: bare `actdbg` in a terminal) |
 | `actdbg run` | run the workflow; stop at the first failed step; offer a shell |
 | `actdbg shell` | re-enter the last failed step's container later |
+| `actdbg replay <run-url>` | reproduce a real failed GitHub run locally from its URL, then debug it |
+| `actdbg back N` | time-travel: a fresh container with the state *right after step N* |
+| `actdbg rerun --from N` | fix the workflow, then re-run `run:` steps from step N (skips `uses:`) |
+| `actdbg diff [N]` | step x-ray: files each step touched + its `$GITHUB_ENV` delta |
 | `actdbg check` | **fidelity report**: where a local run is known to differ from GitHub — per *your* workflow, with line numbers |
 | `actdbg doctor` | diagnose Docker/images/arch against the most common act pitfalls |
-| `actdbg clean` | remove `act-*` containers and networks left behind |
+| `actdbg clean` | remove `act-*` containers, networks, and snapshot images left behind |
 
 Useful flags: `-j job` · `-e event` · `-W file` · `--secrets-file .secrets` ·
 `-s KEY=VAL` · `-P platform=image` · `--matrix key=val` · `--arch linux/amd64` ·
