@@ -420,14 +420,20 @@ func Rerun(from int, job string) error {
 	wd := strings.TrimSpace(dockerOut("inspect", "-f", "{{.Config.WorkingDir}}", c))
 
 	dyn := rf.EnvUpTo(jobID, from-1)
+	skippedUses := 0
 	for _, st := range steps {
 		if st.Number < from {
 			continue
 		}
 		if st.Uses != "" {
-			fmt.Printf("⏸ step %d %q is a `uses:` action — actdbg re-runs only `run:` steps (v0.2 honesty; full re-runs in v0.3)\n", st.Number, st.Name)
-			fmt.Printf("→ inspect the restored container instead: docker exec -it %s sh\n", c)
-			return nil
+			// A `uses:` step at or after the restore point: actdbg replays only
+			// `run:` steps, so its effect is NOT applied here. Skip it and keep
+			// going (the common case is fixing a later run-step) — but say so,
+			// because a following step may depend on it.
+			fmt.Printf("⏭ step %d %q is a `uses:` action — skipped, its effect is NOT applied\n", st.Number, st.Name)
+			fmt.Printf("   if a later step needs it, inspect the container: docker exec -it %s sh\n", c)
+			skippedUses++
+			continue
 		}
 		if strings.Contains(st.Run, "${{") {
 			fmt.Printf("⚠ step %d contains ${{ }} expressions — executed literally (unevaluated)\n", st.Number)
@@ -482,6 +488,9 @@ func Rerun(from int, job string) error {
 		fmt.Printf("✅ step %d done\n", st.Number)
 	}
 	fmt.Printf("✔ re-run from step %d finished — without re-running steps 1–%d. cleanup: docker rm -f %s\n", from, from-1, c)
+	if skippedUses > 0 {
+		fmt.Printf("  note: %d `uses:` step(s) were skipped (not replayed) — see the ⏭ lines above.\n", skippedUses)
+	}
 	return nil
 }
 

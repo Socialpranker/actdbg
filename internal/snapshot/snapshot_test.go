@@ -43,6 +43,27 @@ func TestRecordLookupAndHave(t *testing.T) {
 	}
 }
 
+func TestRestoreNoSnapshotForStep(t *testing.T) {
+	f := rf()
+	if _, err := f.Restore("test", 9); err == nil ||
+		!strings.Contains(err.Error(), "no snapshot for step 9") {
+		t.Errorf("missing record should report no snapshot, got: %v", err)
+	}
+}
+
+func TestRestoreFailedCommitIsDistinct(t *testing.T) {
+	// A step that ran but whose docker commit failed is recorded with an empty
+	// Image; Restore must say so instead of passing "" to docker run.
+	f := &RunFile{
+		RunID: "t", Workflow: "wf.yml", Event: "push",
+		Records: []Record{{Job: "test", Number: 1, Name: "Build", Result: "success", Image: ""}},
+	}
+	_, err := f.Restore("test", 1)
+	if err == nil || !strings.Contains(err.Error(), "snapshot failed to commit") {
+		t.Errorf("empty image should report commit failure, got: %v", err)
+	}
+}
+
 func TestRenderDiff(t *testing.T) {
 	out := rf().RenderDiff(2)
 	for _, w := range []string{`step 2 "Build"`, "+3 ~1 −0", "A /ws/out.bin", "env A=2", "env B=x"} {

@@ -125,8 +125,10 @@ the job container after every step. That unlocks:
 - `actdbg back 3` — a fresh container with the exact state *right after step
   3*, env included. `--cmd 'ls dist/'` for one-off inspection.
 - `actdbg rerun --from 5` — fix the workflow, then re-run **from the failed
-  step** in seconds instead of re-running the whole job. v0.2 re-runs `run:`
-  steps; a downstream `uses:` action stops honestly with a message.
+  step** in seconds instead of re-running the whole job. It replays `run:`
+  steps and skips `uses:` actions (their effect isn't reapplied), telling you
+  exactly which were skipped — so fixing a later step no longer dead-ends on
+  the first `actions/checkout`.
 - `actdbg diff` — step x-ray: which files each step created/changed/deleted
   and what it appended to `$GITHUB_ENV`, with timings.
 
@@ -145,8 +147,6 @@ job locally — the debugger takes over at the failure: shell, `back`, `rerun`.
 Private repos: set `GITHUB_TOKEN`. Honest limits: GitHub-side secrets and OIDC
 don't exist locally, so steps that need them fail differently — `actdbg check`
 tells you which ones before you chase a ghost.
-
-Coming next: re-running `uses:` steps.
 
 ## License
 
