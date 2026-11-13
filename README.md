@@ -1,4 +1,6 @@
 <div align="center">
+<img src="assets/logo.svg" width="96" height="96" alt="actdbg logo">
+
 
 # actdbg
 
