@@ -5,7 +5,7 @@ go 1.26.10
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/charmbracelet/x/ansi v0.11.9
+	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/nektos/act v0.2.97
 	github.com/sirupsen/logrus v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
