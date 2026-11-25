@@ -151,8 +151,8 @@ github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELU
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
 github.com/muesli/termenv v0.16.0 h1:S5AlUN9dENB57rsbnkPyfdGuWIlkmzJjbFf0Tf5FWUc=
 github.com/muesli/termenv v0.16.0/go.mod h1:ZRfOIKPFDYQoDFF4Olj7/QJbW60Ol/kL1pU3VfY/Cnk=
-github.com/nektos/act v0.2.97 h1:IRe5oPcCV1YSBlNobwi/VIaHH6G9/aIH+UU5I/jG8os=
-github.com/nektos/act v0.2.97/go.mod h1:v6tOBYyu+9nA7Mwka3jeSF9KgDfPrZ08dNSZWM5dBOg=
+github.com/nektos/act v0.2.98 h1:f9sFcFMjw5lNOzAoPzuTposTNbMfc9PU9T8KPAF40+I=
+github.com/nektos/act v0.2.98/go.mod h1:v6tOBYyu+9nA7Mwka3jeSF9KgDfPrZ08dNSZWM5dBOg=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
